@@ -6,7 +6,6 @@ __pycache__/
 .Python
 env/
 venv/
-.venv/
 ENV/
 build/
 develop-eggs/
@@ -39,6 +38,3 @@ BOT_TOKEN
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log

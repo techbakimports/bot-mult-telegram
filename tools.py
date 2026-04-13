@@ -37,13 +37,13 @@ def _gerar_imagem_bytes(prompt: str) -> Tuple[bytes, str]:
     try:
         encoded = quote(prompt[:2000])
         url = (
-            f"https://gen.pollinations.ai/image/{encoded}"
+            f"https://image.pollinations.ai/prompt/{encoded}"
             f"?width=1024&height=1024&nologo=true&model=flux"
         )
         img = requests.get(url, timeout=180, allow_redirects=True)
         content_type = img.headers.get("content-type", "")
         if img.ok and ("image" in content_type or len(img.content) > 10_000):
-            logger.info("Imagem gerada via Pollinations (gen.pollinations.ai)")
+            logger.info("Imagem gerada via Pollinations (image.pollinations.ai)")
             return img.content, "Pollinations (flux)"
         errors.append(f"Pollinations: HTTP {img.status_code}, ct={content_type}")
     except Exception as e:
@@ -263,17 +263,19 @@ async def encurtar_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         url = context.args[0]
+        encoded_url = quote(url, safe='')
         
-        api_url = f"https://tinyurl.com/api-create.php?url={url}"
-        response = requests.get(api_url, timeout=5)
-        url_curta = response.text
+        api_url = f"https://is.gd/create.php?format=simple&url={encoded_url}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        response = requests.get(api_url, headers=headers, timeout=5)
+        url_curta = response.text.strip()
         
-        if url_curta.startswith('https'):
+        if url_curta.lower().startswith('http'):
             keyboard = [[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(f"🔗 URL Encurtada:\n\n{url_curta}", reply_markup=reply_markup)
         else:
-            await update.message.reply_text("❌ Erro ao encurtar URL!")
+            await update.message.reply_text(f"❌ Erro ao encurtar URL! Retorno: {url_curta}")
     
     except Exception as e:
         await update.message.reply_text(f"Erro: {str(e)}")

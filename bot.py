@@ -214,17 +214,48 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_time = time.time()
 
     try:
-        url = f"https://api.hackertarget.com/whois/?q={domain}"
+        from datetime import datetime, timezone
+        url = f"https://api.whois.vu/?q={domain}"
         response = requests.get(url, timeout=15)
-        output = response.text
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("available") == "yes":
+                output = f"Domínio {domain} está disponível para registro."
+            else:
+                registrar = data.get("registrar", "N/A")
+                
+                def format_ts(ts):
+                    if not ts: return "N/A"
+                    try:
+                        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+                    except:
+                        return "N/A"
+                
+                created = format_ts(data.get("created"))
+                updated = format_ts(data.get("updated"))
+                expires = format_ts(data.get("expires"))
+                
+                # Coleta os 3 primeiros status se existirem
+                statuses = data.get("statuses", [])
+                status_str = ", ".join(statuses[:3]) if statuses else "N/A"
+                if len(statuses) > 3:
+                    status_str += "..."
+                
+                output = (
+                    f"Registrar: {registrar}\n"
+                    f"Status: {status_str}\n"
+                    f"Criado: {created}\n"
+                    f"Atualizado: {updated}\n"
+                    f"Expira: {expires}\n"
+                )
+        else:
+             output = f"Erro na consulta: HTTP {response.status_code}"
+
         elapsed = time.time() - start_time
         logger.info(f"[WHOIS] ✅ Completado em {elapsed:.2f}s para {domain}")
 
-        if len(output) > 4000:
-            output = output[:4000] + "\n\n... (cortado)"
-            logger.info(f"[WHOIS] Output cortado (original > 4000 chars)")
-
-        await update.message.reply_text(f"🔎 Whois:\n\n{output}")
+        await update.message.reply_text(f"🔎 Whois ({domain}):\n\n{output}")
         logger.info(f"[WHOIS] ✅ Resultado enviado para {username}")
 
     except requests.exceptions.Timeout:
@@ -298,16 +329,20 @@ async def encurtar_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         url = context.args[0]
         logger.info(f"[ENCURTA] Encurtando: {url}")
         
-        # Usar TinyURL
+        from urllib.parse import quote
+        encoded_url = quote(url, safe='')
+        
+        # Usar is.gd (substitui tinyurl que estava dando erro)
         logger.info(f"[ENCURTA] Buscando URL encurtada...")
         start_time = time.time()
-        api_url = f"https://tinyurl.com/api-create.php?url={url}"
-        response = requests.get(api_url, timeout=5)
+        api_url = f"https://is.gd/create.php?format=simple&url={encoded_url}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        response = requests.get(api_url, headers=headers, timeout=5)
         elapsed = time.time() - start_time
         logger.info(f"[ENCURTA] ✅ Obtida em {elapsed:.2f}s")
-        url_curta = response.text
+        url_curta = response.text.strip()
         
-        if url_curta.startswith('https'):
+        if url_curta.lower().startswith('http'):
             logger.info(f"[ENCURTA] ✅ Resultado: {url_curta}")
             await update.message.reply_text(f"🔗 URL Encurtada:\n\n{url_curta}")
             logger.info(f"[ENCURTA] ✅ Resultado enviado para {username}")

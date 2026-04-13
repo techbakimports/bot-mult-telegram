@@ -52,14 +52,45 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         import requests
-        url = f"https://api.hackertarget.com/whois/?q={domain}"
+        from datetime import datetime, timezone
+        url = f"https://api.whois.vu/?q={domain}"
         response = requests.get(url, timeout=15)
-        output = response.text
 
-        if len(output) > 4000:
-            output = output[:4000] + "\n\n... (cortado)"
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("available") == "yes":
+                output = f"Domínio {domain} está disponível para registro."
+            else:
+                registrar = data.get("registrar", "N/A")
+                
+                def format_ts(ts):
+                    if not ts: return "N/A"
+                    try:
+                        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+                    except:
+                        return "N/A"
+                
+                created = format_ts(data.get("created"))
+                updated = format_ts(data.get("updated"))
+                expires = format_ts(data.get("expires"))
+                
+                # Coleta os 3 primeiros status se existirem
+                statuses = data.get("statuses", [])
+                status_str = ", ".join(statuses[:3]) if statuses else "N/A"
+                if len(statuses) > 3:
+                    status_str += "..."
+                
+                output = (
+                    f"Registrar: {registrar}\n"
+                    f"Status: {status_str}\n"
+                    f"Criado: {created}\n"
+                    f"Atualizado: {updated}\n"
+                    f"Expira: {expires}\n"
+                )
+        else:
+             output = f"Erro na consulta: HTTP {response.status_code}"
 
-        await update.message.reply_text(f"🔎 Whois:\n\n{output}")
+        await update.message.reply_text(f"🔎 Whois ({domain}):\n\n{output}")
 
     except Exception as e:
         await update.message.reply_text(f"Erro: {str(e)}")
