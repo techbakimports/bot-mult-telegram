@@ -1,0 +1,9 @@
+python-telegram-bot==20.3
+python-dotenv==1.0.0
+psutil==5.9.0
+requests==2.31.0
+qrcode
+Pillow
+yt-dlp
+pydub
+audioop-lts>=0.2.1; python_version>="3.13"
