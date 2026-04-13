@@ -51,14 +51,10 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     domain = context.args[0]
 
     try:
-        result = subprocess.run(
-            ["whois", domain],
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
-
-        output = result.stdout
+        import requests
+        url = f"https://api.hackertarget.com/whois/?q={domain}"
+        response = requests.get(url, timeout=15)
+        output = response.text
 
         if len(output) > 4000:
             output = output[:4000] + "\n\n... (cortado)"
@@ -82,8 +78,10 @@ async def ping_site(update: Update, context: ContextTypes.DEFAULT_TYPE):
     site = context.args[0]
 
     try:
+        import os
+        param = '-n' if os.name == 'nt' else '-c'
         result = subprocess.run(
-            ["ping", "-c", "4", site],
+            ["ping", param, "4", site],
             capture_output=True,
             text=True,
             timeout=10

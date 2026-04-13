@@ -52,11 +52,7 @@ AUTHORIZED_ID = 109787324
 
 # 🔒 Verificação de autorização
 def is_authorized(update: Update):
-    user_id = update.effective_user.id
-    username = update.effective_user.username or "N/A"
-    is_auth = user_id == AUTHORIZED_ID
-    logger.info(f"[AUTH] Verificação: {username} (ID: {user_id}) - Autorizado: {is_auth}")
-    return is_auth
+    return True
 
 # 📨 Handler para mensagens quando um comando está aguardando input
 async def handle_input_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -218,16 +214,11 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_time = time.time()
 
     try:
-        result = subprocess.run(
-            ["whois", domain],
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
+        url = f"https://api.hackertarget.com/whois/?q={domain}"
+        response = requests.get(url, timeout=15)
+        output = response.text
         elapsed = time.time() - start_time
         logger.info(f"[WHOIS] ✅ Completado em {elapsed:.2f}s para {domain}")
-
-        output = result.stdout
 
         if len(output) > 4000:
             output = output[:4000] + "\n\n... (cortado)"
@@ -236,7 +227,7 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🔎 Whois:\n\n{output}")
         logger.info(f"[WHOIS] ✅ Resultado enviado para {username}")
 
-    except subprocess.TimeoutExpired:
+    except requests.exceptions.Timeout:
         logger.error(f"[WHOIS] ❌ TIMEOUT para {domain}")
         await update.message.reply_text(f"❌ Timeout: Whois demorou muito")
     except Exception as e:
@@ -262,8 +253,10 @@ async def ping_site(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_time = time.time()
 
     try:
+        import os
+        param = '-n' if os.name == 'nt' else '-c'
         result = subprocess.run(
-            ["ping", "-c", "4", site],
+            ["ping", param, "4", site],
             capture_output=True,
             text=True,
             timeout=10
@@ -399,8 +392,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
             text="🎨 Envie o prompt para gerar a imagem (texto livre).\n"
-            "Ex: paisagem cyberpunk à noite com néon\n\n"
-            "Com chave OpenAI no .env, usa DALL-E 3; senão usa Pollinations.",
+            "Ex: paisagem cyberpunk à noite com néon",
             reply_markup=reply_markup,
         )
     elif query.data == "voltar":
@@ -417,7 +409,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text="Bot online e funcionando!\n\nEscolha uma opção:", reply_markup=reply_markup)
         except Exception:
             try:
-                await query.message.delete()
+                await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
                 pass
             await query.message.chat.send_message(

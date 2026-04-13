@@ -52,8 +52,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['awaiting_command'] = 'imagem'
         await query.edit_message_text(
             text="🎨 Envie o prompt para gerar a imagem.\n"
-            "Ex: paisagem cyberpunk à noite\n\n"
-            "Com OPENAI_API_KEY no .env usa DALL-E 3; senão Pollinations."
+            "Ex: paisagem cyberpunk à noite"
         )
     elif query.data == "voltar":
         # Voltar ao menu principal
@@ -64,7 +63,7 @@ async def show_menu(query):
     """Mostra o menu principal.
 
     Se a mensagem atual for uma foto (ex: QR code, imagem gerada),
-    edit_message_text falha. Nesse caso, deleta a mensagem e envia uma nova.
+    edit_message_text falha. Nesse caso, removemos os botões inline e enviamos uma nova.
     """
     keyboard = [
         [InlineKeyboardButton("Status", callback_data="status"), InlineKeyboardButton("Whois", callback_data="whois")],
@@ -78,9 +77,9 @@ async def show_menu(query):
         await query.edit_message_text(text="Bot online e funcionando!\n\nEscolha uma opcao:", reply_markup=reply_markup)
     except Exception:
         # Mensagem é uma foto/mídia — não dá para editar para texto.
-        # Deleta a mensagem antiga e envia o menu como nova mensagem.
+        # Remove teclado e envia o menu como nova mensagem.
         try:
-            await query.message.delete()
+            await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
         await query.message.chat.send_message(

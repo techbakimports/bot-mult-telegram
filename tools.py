@@ -26,45 +26,14 @@ logger = logging.getLogger(__name__)
 def _gerar_imagem_bytes(prompt: str) -> Tuple[bytes, str]:
     """Retorna (bytes_png, fonte).
 
-    Ordem de tentativa:
-    1. OpenAI DALL-E 3 (se OPENAI_API_KEY existir)
-    2. Pollinations AI – endpoint gratuito gen.pollinations.ai
-    3. AI Horde (Stable Horde) – crowdsourced, anônimo, pode demorar
+    Usa Pollinations AI – endpoint gratuito gen.pollinations.ai
     """
     prompt = (prompt or "").strip()
     if not prompt:
         raise ValueError("Prompt vazio.")
 
-    # ── 1. OpenAI (pago) ─────────────────────────────────────────────
-    try:
-        from config import OPENAI_API_KEY
-    except ImportError:
-        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-    api_key = OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
-    if api_key:
-        r = requests.post(
-            "https://api.openai.com/v1/images/generations",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": "dall-e-3",
-                "prompt": prompt[:4000],
-                "n": 1,
-                "size": "1024x1024",
-            },
-            timeout=180,
-        )
-        if not r.ok:
-            err = r.text[:500]
-            raise RuntimeError(f"OpenAI: {r.status_code} — {err}")
-        data = r.json()
-        image_url = data["data"][0]["url"]
-        img = requests.get(image_url, timeout=120)
-        img.raise_for_status()
-        return img.content, "DALL-E 3"
-
-    # ── 2. Pollinations AI (gratuito, sem chave) ─────────────────────
     errors = []
+    # ── Pollinations AI (gratuito, sem chave) ─────────────────────
     try:
         encoded = quote(prompt[:2000])
         url = (
@@ -81,99 +50,12 @@ def _gerar_imagem_bytes(prompt: str) -> Tuple[bytes, str]:
         errors.append(f"Pollinations: {e}")
         logger.warning("Pollinations falhou: %s", e)
 
-    # ── 2b. Fallback: endpoint antigo do Pollinations ────────────────
-    try:
-        encoded = quote(prompt[:2000])
-        url = (
-            f"https://image.pollinations.ai/prompt/{encoded}"
-            f"?width=1024&height=1024&nologo=true&model=flux"
-        )
-        img = requests.get(url, timeout=180, allow_redirects=True)
-        content_type = img.headers.get("content-type", "")
-        if img.ok and ("image" in content_type or len(img.content) > 10_000):
-            logger.info("Imagem gerada via Pollinations (endpoint antigo)")
-            return img.content, "Pollinations (flux)"
-        errors.append(f"Pollinations-legacy: HTTP {img.status_code}")
-    except Exception as e:
-        errors.append(f"Pollinations-legacy: {e}")
-        logger.warning("Pollinations legacy falhou: %s", e)
-
-    # ── 3. AI Horde / Stable Horde (gratuito, crowdsourced) ──────────
-    try:
-        horde_payload = {
-            "prompt": prompt[:1000],
-            "params": {
-                "width": 1024,
-                "height": 1024,
-                "steps": 25,
-                "sampler_name": "k_euler_a",
-                "cfg_scale": 7,
-            },
-            "nsfw": False,
-            "models": ["stable_diffusion"],
-        }
-        horde_headers = {
-            "Content-Type": "application/json",
-            "apikey": "0000000000",  # chave anônima
-        }
-
-        # Enviar pedido
-        r = requests.post(
-            "https://stablehorde.net/api/v2/generate/async",
-            json=horde_payload,
-            headers=horde_headers,
-            timeout=30,
-        )
-        if not r.ok:
-            raise RuntimeError(f"Horde async: HTTP {r.status_code} – {r.text[:300]}")
-
-        job_id = r.json().get("id")
-        if not job_id:
-            raise RuntimeError("Horde: sem job id")
-
-        # Polling (máx ~3 min)
-        import time as _time
-        for _ in range(90):
-            _time.sleep(4)
-            check = requests.get(
-                f"https://stablehorde.net/api/v2/generate/check/{job_id}",
-                headers=horde_headers,
-                timeout=15,
-            )
-            if check.ok and check.json().get("done"):
-                break
-        else:
-            raise RuntimeError("Horde: timeout após 6 minutos")
-
-        # Buscar resultado
-        result = requests.get(
-            f"https://stablehorde.net/api/v2/generate/status/{job_id}",
-            headers=horde_headers,
-            timeout=30,
-        )
-        result.raise_for_status()
-        generations = result.json().get("generations", [])
-        if not generations:
-            raise RuntimeError("Horde: nenhuma geração retornada")
-
-        img_url = generations[0].get("img")
-        if not img_url:
-            raise RuntimeError("Horde: sem URL de imagem")
-
-        img = requests.get(img_url, timeout=120)
-        img.raise_for_status()
-        logger.info("Imagem gerada via AI Horde (Stable Horde)")
-        return img.content, "AI Horde (Stable Diffusion)"
-
-    except Exception as e:
-        errors.append(f"AI Horde: {e}")
-        logger.warning("AI Horde falhou: %s", e)
-
     # Nenhum serviço funcionou
     raise RuntimeError(
         "Nenhum serviço de geração de imagem disponível.\n"
         + "\n".join(f"• {err}" for err in errors)
     )
+
 
 
 # 🖼️ /imagem
