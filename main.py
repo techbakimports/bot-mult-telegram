@@ -15,7 +15,6 @@ from config import TOKEN
 from utils import is_authorized
 from handlers import status, whois_lookup, ping_site
 from tools import (
-    traduzir,
     encurtar_url,
     gerar_qrcode,
     baixar_media,
@@ -36,10 +35,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Criar os botões inline com todas as opções
     keyboard = [
         [InlineKeyboardButton("Status", callback_data="status"), InlineKeyboardButton("Whois", callback_data="whois")],
-        [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Traduz", callback_data="traduz")],
-        [InlineKeyboardButton("Encurtar URL", callback_data="encurta"), InlineKeyboardButton("QR Code", callback_data="qrcode")],
-        [InlineKeyboardButton("Baixar", callback_data="baixar"), InlineKeyboardButton("Audio", callback_data="audio")],
-        [InlineKeyboardButton("Clima", callback_data="clima"), InlineKeyboardButton("Imagem", callback_data="imagem")]
+        [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Encurtar URL", callback_data="encurta")],
+        [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
+        [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
+        [InlineKeyboardButton("Imagem", callback_data="imagem")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -114,7 +113,6 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("whois", whois_lookup))
     app.add_handler(CommandHandler("ping_site", ping_site))
-    app.add_handler(CommandHandler("traduz", traduzir))
     app.add_handler(CommandHandler("encurta", encurtar_url))
     app.add_handler(CommandHandler("qrcode", gerar_qrcode))
     app.add_handler(CommandHandler("baixar", baixar_media))

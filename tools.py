@@ -1,5 +1,5 @@
 """
-Ferramentas diversas (tradução, encurtar URL, imagens)
+Ferramentas diversas (encurtar URL, imagens, download, clima)
 """
 import asyncio
 import logging
@@ -232,36 +232,6 @@ async def gerar_imagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(err_txt)
 
 
-# 🌐 /traduz
-async def traduzir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Traduz textos para outros idiomas"""
-    if not is_authorized(update):
-        return
-    
-    try:
-        if not context.args or len(context.args) < 2:
-            await update.message.reply_text("Use: /traduz <idioma_destino> <texto>\nEx: /traduz es Olá mundo")
-            return
-        
-        idioma_destino = context.args[0].lower()
-        texto = " ".join(context.args[1:])
-        
-        url = f"https://api.mymemory.translated.net/get?q={texto}&langpair=pt|{idioma_destino}"
-        response = requests.get(url, timeout=5)
-        data = response.json()
-        
-        if data['responseStatus'] == 200:
-            traducao = data['responseData']['translatedText']
-            keyboard = [[InlineKeyboardButton("Voltar", callback_data="voltar")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(f"Traducao para {idioma_destino.upper()}:\n\n{traducao}", reply_markup=reply_markup)
-        else:
-            await update.message.reply_text("❌ Erro ao traduzir!")
-    
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {str(e)}")
-
-
 # 🎵 /audio
 async def process_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processa áudio enviado (conversão, cortar, ajustar volume, efeitos simples).
@@ -478,8 +448,6 @@ async def baixar_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['download_url'] = url
         
         # Mostrar menu de qualidades
-        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-        
         keyboard = [
             [InlineKeyboardButton("🎬 360p (Rápido)", callback_data="qual_360p")],
             [InlineKeyboardButton("🎥 480p (Normal)", callback_data="qual_480p")],
@@ -502,6 +470,17 @@ async def baixar_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Erro: {str(e)}")
 
 
+async def _safe_edit_message(query, text: str):
+    """Edita mensagem ignorando erro 'message is not modified'."""
+    try:
+        await query.edit_message_text(text)
+    except Exception as e:
+        # Telegram retorna 400 quando o texto não mudou
+        err_str = str(e).lower()
+        if "message is not modified" not in err_str:
+            logger.warning("Erro ao editar mensagem: %s", e)
+
+
 # Função auxiliar para fazer o download
 async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qualidade: str):
     """Executa o download com a qualidade especificada e mostra progresso em tempo real."""
@@ -516,10 +495,17 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
             return
 
         tmpdir = tempfile.mkdtemp(prefix='yt_dl_')
-        progress_data = {'percentage': 0, 'speed': 'N/A', 'eta': 'N/A', 'status': 'iniciando'}
+        progress_data = {
+            'percentage': 0,
+            'speed': 'N/A',
+            'eta': 'N/A',
+            'status': 'iniciando',
+            'downloaded': 0,
+            'total': 0,
+        }
         
         # Editar mensagem inicial para mostrar que o download está começando
-        await update.callback_query.edit_message_text("🔄 Iniciando download...\nPor favor, aguarde...")
+        await _safe_edit_message(update.callback_query, "🔄 Iniciando download...\nPor favor, aguarde...")
 
         def format_progress_bar(percentage: float, width: int = 15) -> str:
             """Cria uma barra de progresso visual."""
@@ -531,18 +517,34 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
             """Callback de progresso do yt-dlp (SÍNCRONO)."""
             if d['status'] == 'downloading':
                 try:
-                    p = d.get('_percent_str', '0%').strip()
-                    percent_str = p.rstrip('%')
-                    try:
-                        progress_data['percentage'] = float(percent_str)
-                    except ValueError:
-                        progress_data['percentage'] = 0
-                    
-                    progress_data['speed'] = d.get('_speed_str', 'N/A')
-                    progress_data['eta'] = d.get('_eta_str', 'N/A')
+                    # Tentar obter percentage de múltiplas fontes
+                    pct = 0.0
+
+                    # Método 1: downloaded_bytes / total_bytes
+                    downloaded = d.get('downloaded_bytes', 0) or 0
+                    total = d.get('total_bytes', 0) or d.get('total_bytes_estimate', 0) or 0
+
+                    if total > 0 and downloaded > 0:
+                        pct = (downloaded / total) * 100
+                        progress_data['downloaded'] = downloaded
+                        progress_data['total'] = total
+                    else:
+                        # Método 2: _percent_str
+                        p = d.get('_percent_str', '0%').strip()
+                        percent_str = p.replace('%', '').strip()
+                        try:
+                            pct = float(percent_str)
+                        except (ValueError, TypeError):
+                            pct = 0.0
+
+                    progress_data['percentage'] = min(pct, 100.0)
+                    progress_data['speed'] = d.get('_speed_str', 'N/A') or 'N/A'
+                    progress_data['eta'] = d.get('_eta_str', 'N/A') or 'N/A'
+                    progress_data['status'] = 'downloading'
                 except Exception:
                     pass
             elif d['status'] == 'finished':
+                progress_data['percentage'] = 100
                 progress_data['status'] = 'finalizando'
 
         # Detectar se ffmpeg está disponível (necessário para merge de streams)
@@ -581,25 +583,33 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
             'no_warnings': True,
             'noplaylist': True,
             'socket_timeout': 30,
-            'retries': 3,
-            'fragment_retries': 3,
+            'retries': 5,
+            'fragment_retries': 5,
             'progress_hooks': [progress_hook],
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
             },
             'restrictfilenames': True,
+            'noprogress': False,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['web', 'android'],
+                },
+            },
         }
 
         if _has_ffmpeg:
             ydl_opts['merge_output_format'] = 'mp4'
 
         if qualidade == 'audio':
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }]
+            if _has_ffmpeg:
+                ydl_opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
 
         # Função que executa o download em thread separada
         def run_download():
@@ -613,6 +623,7 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
         
         # Atualizar progresso a cada 3 segundos
         last_update = time.time()
+        last_text = ""
         while not download_task.done():
             await asyncio.sleep(1)
             
@@ -620,23 +631,33 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
             if time.time() - last_update >= 3:
                 percentage = progress_data['percentage']
                 bar = format_progress_bar(percentage)
-                status_msg = f"⬇️ Download em progresso\n\n{bar}\n\n⚡ Velocidade: {progress_data['speed']}\n⏱️ ETA: {progress_data['eta']}"
-                
-                try:
-                    await update.callback_query.edit_message_text(status_msg)
-                except Exception:
-                    pass
+
+                # Informação de tamanho
+                size_info = ""
+                if progress_data['total'] > 0:
+                    dl_mb = progress_data['downloaded'] / (1024 * 1024)
+                    total_mb = progress_data['total'] / (1024 * 1024)
+                    size_info = f"\n📦 {dl_mb:.1f} / {total_mb:.1f} MB"
+
+                status_text = (
+                    f"⬇️ Download em progresso\n\n"
+                    f"{bar}{size_info}\n\n"
+                    f"⚡ Velocidade: {progress_data['speed']}\n"
+                    f"⏱️ ETA: {progress_data['eta']}"
+                )
+
+                # Só editar se o texto realmente mudou
+                if status_text != last_text:
+                    await _safe_edit_message(update.callback_query, status_text)
+                    last_text = status_text
                 
                 last_update = time.time()
 
-        # Aguardar conclusão do download
+        # Aguardar conclusão do download (captura exceções)
         info = await download_task
 
         # Atualizar status
-        try:
-            await update.callback_query.edit_message_text("✅ Download concluído! Processando arquivo...")
-        except Exception:
-            pass
+        await _safe_edit_message(update.callback_query, "✅ Download concluído! Processando arquivo...")
 
         # Encontra arquivo gerado no tmpdir
         files = os.listdir(tmpdir)
@@ -695,12 +716,12 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
 
 # 🌦️ /clima
 async def clima(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Obtém informações de clima de uma cidade usando OpenWeatherMap API.
+    """Obtém informações de clima de uma cidade.
 
     Uso: /clima <cidade>
     Ex: /clima São Paulo
 
-    Nota: Requer OPENWEATHER_API_KEY no config.py (chave gratuita em openweathermap.org)
+    Nota: Com OPENWEATHER_API_KEY usa OpenWeatherMap, senão usa open-meteo (gratuito).
     """
     if not is_authorized(update):
         return

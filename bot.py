@@ -87,15 +87,9 @@ async def handle_input_message(update: Update, context: ContextTypes.DEFAULT_TYP
             await ping_site(update, context)
             context.user_data['awaiting_command'] = None
             
-        elif awaiting_cmd == 'traduz':
-            # Executar tradução
-            parts = msg_text.split(maxsplit=1)
-            context.args = parts
-            await traduzir(update, context)
-            context.user_data['awaiting_command'] = None
-            
         elif awaiting_cmd == 'encurta':
             # Encurtar URL
+            from tools import encurtar_url
             context.args = [msg_text]
             await encurtar_url(update, context)
             context.user_data['awaiting_command'] = None
@@ -160,11 +154,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Criar os botões inline com todas as opções
     keyboard = [
         [InlineKeyboardButton("Status", callback_data="status"), InlineKeyboardButton("Whois", callback_data="whois")],
-        [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Conversor", callback_data="conversor")],
-        [InlineKeyboardButton("Unidades", callback_data="unidades"), InlineKeyboardButton("Traduz", callback_data="traduz")],
-        [InlineKeyboardButton("Encurtar URL", callback_data="encurta"), InlineKeyboardButton("QR Code", callback_data="qrcode")],
-        [InlineKeyboardButton("Baixar", callback_data="baixar"), InlineKeyboardButton("Áudio", callback_data="audio")],
-        [InlineKeyboardButton("Clima", callback_data="clima"), InlineKeyboardButton("Imagem", callback_data="imagem")]
+        [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Encurtar URL", callback_data="encurta")],
+        [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
+        [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
+        [InlineKeyboardButton("Imagem", callback_data="imagem")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -294,148 +287,6 @@ async def ping_site(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[PING] ❌ Erro para {site}: {str(e)}")
         await update.message.reply_text(f"Erro: {str(e)}")
 
-# 💱 /conversor
-async def conversor(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    username = update.effective_user.username or "N/A"
-    logger.info(f"[CONVERSOR] Solicitude por {username}")
-    
-    if not is_authorized(update):
-        logger.warning(f"[CONVERSOR] Acesso negado para {username}")
-        return
-    
-    try:
-        if not context.args or len(context.args) < 3:
-            logger.warning(f"[CONVERSOR] Parâmetros inválidos por {username}")
-            await update.message.reply_text("Use: /conversor <valor> <moeda_origem> <moeda_destino>\nEx: /conversor 100 USD BRL")
-            return
-        
-        valor = float(context.args[0])
-        origem = context.args[1].upper()
-        destino = context.args[2].upper()
-        logger.info(f"[CONVERSOR] Convertendo {valor} {origem} → {destino}")
-        
-        # Fazer conversão via API
-        logger.info(f"[CONVERSOR] Buscando taxa de câmbio...")
-        start_time = time.time()
-        url = f"https://api.exchangerate-api.com/v4/latest/{origem}"
-        response = requests.get(url, timeout=5)
-        elapsed = time.time() - start_time
-        logger.info(f"[CONVERSOR] ✅ Taxa obtida em {elapsed:.2f}s")
-        data = response.json()
-        
-        if destino not in data['rates']:
-            logger.warning(f"[CONVERSOR] Moeda {destino} não encontrada")
-            await update.message.reply_text(f"❌ Moeda '{destino}' não encontrada!")
-            return
-        
-        taxa = data['rates'][destino]
-        resultado = valor * taxa
-        logger.info(f"[CONVERSOR] ✅ Resultado: {valor} {origem} = {resultado:.2f} {destino}")
-        
-        await update.message.reply_text(f"💱 Conversão:\n\n{valor} {origem} = {resultado:.2f} {destino}")
-        logger.info(f"[CONVERSOR] ✅ Resultado enviado para {username}")
-    
-    except requests.Timeout:
-        logger.error(f"[CONVERSOR] ❌ TIMEOUT ao buscar taxa")
-        await update.message.reply_text(f"❌ Timeout: API de câmbio demorou muito")
-    except Exception as e:
-        logger.error(f"[CONVERSOR] ❌ Erro: {str(e)}")
-        await update.message.reply_text(f"Erro: {str(e)}")
-
-# 📋 /unidades
-async def conversor_unidades(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    username = update.effective_user.username or "N/A"
-    logger.info(f"[UNIDADES] Solicitude por {username}")
-    
-    if not is_authorized(update):
-        logger.warning(f"[UNIDADES] Acesso negado para {username}")
-        return
-    
-    try:
-        if not context.args or len(context.args) < 3:
-            logger.warning(f"[UNIDADES] Parâmetros inválidos por {username}")
-            await update.message.reply_text("Use: /unidades <valor> <origem> <destino>\nEx: /unidades 100 km mi\n\nOpções: km→mi, m→ft, kg→lb, l→gal")
-            return
-        
-        valor = float(context.args[0])
-        origem = context.args[1].lower()
-        destino = context.args[2].lower()
-        logger.info(f"[UNIDADES] Convertendo {valor} {origem} → {destino}")
-        
-        # Tabela de conversões (apenas os fatores)
-        conversoes = {
-            ('km', 'mi'): 0.621371,
-            ('mi', 'km'): 1.60934,
-            ('m', 'ft'): 3.28084,
-            ('ft', 'm'): 0.3048,
-            ('kg', 'lb'): 2.20462,
-            ('lb', 'kg'): 0.453592,
-            ('l', 'gal'): 0.264172,
-            ('gal', 'l'): 3.78541,
-        }
-        
-        chave = (origem, destino)
-        if chave not in conversoes:
-            logger.warning(f"[UNIDADES] Conversão não suportada: {origem}→{destino}")
-            await update.message.reply_text("❌ Conversão não suportada!")
-            return
-        
-        resultado = valor * conversoes[chave]
-        logger.info(f"[UNIDADES] ✅ Resultado: {valor} {origem} = {resultado:.2f} {destino}")
-        await update.message.reply_text(f"📋 Conversão:\n\n{valor} {origem} = {resultado:.2f} {destino}")
-        logger.info(f"[UNIDADES] ✅ Resultado enviado para {username}")
-    
-    except ValueError as e:
-        logger.error(f"[UNIDADES] ❌ Erro ao converter: {str(e)}")
-        await update.message.reply_text(f"❌ Valor inválido")
-    except Exception as e:
-        logger.error(f"[UNIDADES] ❌ Erro: {str(e)}")
-        await update.message.reply_text(f"Erro: {str(e)}")
-
-# 🌐 /traduz
-async def traduzir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    username = update.effective_user.username or "N/A"
-    logger.info(f"[TRADUZ] Solicitude por {username}")
-    
-    if not is_authorized(update):
-        logger.warning(f"[TRADUZ] Acesso negado para {username}")
-        return
-    
-    try:
-        if not context.args or len(context.args) < 2:
-            logger.warning(f"[TRADUZ] Parâmetros inválidos por {username}")
-            await update.message.reply_text("Use: /traduz <idioma_destino> <texto>\nEx: /traduz es Olá mundo")
-            return
-        
-        idioma_destino = context.args[0].lower()
-        texto = " ".join(context.args[1:])
-        logger.info(f"[TRADUZ] Traduzindo para {idioma_destino}: '{texto}'")
-        
-        # Usar Google Translate via TK library
-        logger.info(f"[TRADUZ] Buscando tradução...")
-        start_time = time.time()
-        url = f"https://api.mymemory.translated.net/get?q={texto}&langpair=pt|{idioma_destino}"
-        response = requests.get(url, timeout=5)
-        elapsed = time.time() - start_time
-        logger.info(f"[TRADUZ] ✅ Obtida em {elapsed:.2f}s")
-        data = response.json()
-        
-        if data['responseStatus'] == 200:
-            traducao = data['responseData']['translatedText']
-            logger.info(f"[TRADUZ] ✅ Resultado: '{traducao}'")
-            await update.message.reply_text(f"🌐 Tradução para {idioma_destino.upper()}:\n\n{traducao}")
-            logger.info(f"[TRADUZ] ✅ Resultado enviado para {username}")
-        else:
-            logger.error(f"[TRADUZ] ❌ API retornou: {data['responseStatus']}")
-            await update.message.reply_text("❌ Erro ao traduzir!")
-    
-    except requests.Timeout:
-        logger.error(f"[TRADUZ] ❌ TIMEOUT ao buscar tradução")
-        await update.message.reply_text(f"❌ Timeout: API demorou muito")
-    except Exception as e:
-        logger.error(f"[TRADUZ] ❌ Erro: {str(e)}")
-        await update.message.reply_text(f"Erro: {str(e)}")
-
 # 🔗 /encurta
 async def encurtar_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.effective_user.username or "N/A"
@@ -504,72 +355,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text="📨 Envie o site para fazer ping:", reply_markup=reply_markup)
-    elif query.data == "conversor":
-        # Submenu de conversor
-        keyboard = [
-            [InlineKeyboardButton("USD→BRL", callback_data="conv_usd_brl"), InlineKeyboardButton("EUR→BRL", callback_data="conv_eur_brl")],
-            [InlineKeyboardButton("USD→EUR", callback_data="conv_usd_eur"), InlineKeyboardButton("GBP→BRL", callback_data="conv_gbp_brl")],
-            [InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="💱 Selecione a conversão (padrão 100):", reply_markup=reply_markup)
-    elif query.data == "unidades":
-        # Submenu de unidades
-        keyboard = [
-            [InlineKeyboardButton("100 km→mi", callback_data="unit_km_mi"), InlineKeyboardButton("100 kg→lb", callback_data="unit_kg_lb")],
-            [InlineKeyboardButton("100 m→ft", callback_data="unit_m_ft"), InlineKeyboardButton("100 l→gal", callback_data="unit_l_gal")],
-            [InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="📋 Selecione a conversão:", reply_markup=reply_markup)
-    # Conversões de moedas
-    elif query.data.startswith("conv_"):
-        _, origem, destino = query.data.split("_")
-        valor = 100
-        try:
-            url = f"https://api.exchangerate-api.com/v4/latest/{origem.upper()}"
-            response = requests.get(url, timeout=5)
-            data = response.json()
-            
-            taxa = data['rates'][destino.upper()]
-            resultado = valor * taxa
-            
-            msg = f"💱 Conversão:\n\n{valor} {origem.upper()} = {resultado:.2f} {destino.upper()}"
-            keyboard = [[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text=msg, reply_markup=reply_markup)
-        except Exception as e:
-            await query.edit_message_text(text=f"❌ Erro: {str(e)}")
-    # Conversões de unidades
-    elif query.data.startswith("unit_"):
-        _, origem, destino = query.data.split("_")
-        valor = 100
-        
-        conversoes = {
-            ('km', 'mi'): 0.621371,
-            ('mi', 'km'): 1.60934,
-            ('m', 'ft'): 3.28084,
-            ('ft', 'm'): 0.3048,
-            ('kg', 'lb'): 2.20462,
-            ('lb', 'kg'): 0.453592,
-            ('l', 'gal'): 0.264172,
-            ('gal', 'l'): 3.78541,
-        }
-        
-        chave = (origem, destino)
-        if chave in conversoes:
-            resultado = valor * conversoes[chave]
-            msg = f"📋 Conversão:\n\n{valor} {origem} = {resultado:.2f} {destino}"
-            keyboard = [[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text=msg, reply_markup=reply_markup)
-        else:
-            await query.edit_message_text(text="❌ Conversão não encontrada")
-    elif query.data == "traduz":
-        context.user_data['awaiting_command'] = 'traduz'
-        keyboard = [[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="📨 Use o formato: <idioma> <texto>\nEx: es Olá mundo", reply_markup=reply_markup)
     elif query.data == "encurta":
         context.user_data['awaiting_command'] = 'encurta'
         keyboard = [[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]]
@@ -622,11 +407,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Voltar ao menu principal
         keyboard = [
             [InlineKeyboardButton("Status", callback_data="status"), InlineKeyboardButton("Whois", callback_data="whois")],
-            [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Conversor", callback_data="conversor")],
-            [InlineKeyboardButton("Unidades", callback_data="unidades"), InlineKeyboardButton("Traduz", callback_data="traduz")],
-            [InlineKeyboardButton("Encurtar URL", callback_data="encurta"), InlineKeyboardButton("QR Code", callback_data="qrcode")],
-            [InlineKeyboardButton("Baixar", callback_data="baixar"), InlineKeyboardButton("Áudio", callback_data="audio")],
-            [InlineKeyboardButton("Clima", callback_data="clima"), InlineKeyboardButton("Imagem", callback_data="imagem")]
+            [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Encurtar URL", callback_data="encurta")],
+            [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
+            [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
+            [InlineKeyboardButton("Imagem", callback_data="imagem")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         try:
@@ -656,9 +440,6 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("whois", whois_lookup))
     app.add_handler(CommandHandler("ping_site", ping_site))
-    app.add_handler(CommandHandler("conversor", conversor))
-    app.add_handler(CommandHandler("unidades", conversor_unidades))
-    app.add_handler(CommandHandler("traduz", traduzir))
     app.add_handler(CommandHandler("encurta", encurtar_url))
     app.add_handler(CommandHandler("clima", clima))
     app.add_handler(CommandHandler("imagem", gerar_imagem))
