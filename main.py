@@ -22,6 +22,7 @@ from tools import (
     clima,
     fazer_download,
     gerar_imagem,
+    converter_imagem,
 )
 from button_handler import button_handler, show_menu
 
@@ -38,7 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Encurtar URL", callback_data="encurta")],
         [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
         [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
-        [InlineKeyboardButton("Imagem", callback_data="imagem")]
+        [InlineKeyboardButton("Imagem", callback_data="imagem"), InlineKeyboardButton("Converter Img", callback_data="conv_img")],
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -119,6 +120,7 @@ def main():
     app.add_handler(CommandHandler("audio", process_audio))
     app.add_handler(CommandHandler("clima", clima))
     app.add_handler(CommandHandler("imagem", gerar_imagem))
+    app.add_handler(CommandHandler("conv_img", converter_imagem))
 
     # Handler para capturar mensagens quando um comando está aguardando input
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input_message))

@@ -8,12 +8,18 @@ import subprocess
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from utils import is_authorized
+from config import AUTHORIZED_ID
 
 
 # 📊 /status
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra status da VPS"""
-    if not is_authorized(update):
+    """Mostra status da VPS (restrito ao dono)"""
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id != AUTHORIZED_ID:
+        if update.callback_query:
+            await update.callback_query.answer("⛔ Acesso restrito.", show_alert=True)
+        else:
+            await update.message.reply_text("⛔ Acesso restrito.")
         return
 
     cpu = psutil.cpu_percent()
@@ -90,7 +96,8 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
              output = f"Erro na consulta: HTTP {response.status_code}"
 
-        await update.message.reply_text(f"🔎 Whois ({domain}):\n\n{output}")
+        voltar = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]])
+        await update.message.reply_text(f"🔎 Whois ({domain}):\n\n{output}", reply_markup=voltar)
 
     except Exception as e:
         await update.message.reply_text(f"Erro: {str(e)}")

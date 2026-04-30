@@ -2,6 +2,7 @@
 Ferramentas diversas (encurtar URL, imagens, download, clima)
 """
 import asyncio
+import json
 import logging
 import os
 from typing import Tuple
@@ -21,6 +22,34 @@ from urllib.parse import quote
 from utils import is_authorized
 
 logger = logging.getLogger(__name__)
+
+
+def _json_cookies_to_netscape(json_path: str) -> str:
+    """Converte cookies exportados em JSON para o formato Netscape que o yt-dlp aceita.
+    Retorna o caminho do arquivo .txt gerado no mesmo diretório.
+    """
+    with open(json_path, 'r', encoding='utf-8') as f:
+        cookies = json.load(f)
+
+    txt_path = json_path.rsplit('.', 1)[0] + '_converted.txt'
+    lines = ['# Netscape HTTP Cookie File', '# Gerado automaticamente pelo bot\n']
+
+    for c in cookies:
+        domain = c.get('domain', '')
+        if not domain.startswith('.'):
+            domain = '.' + domain
+        include_sub = 'TRUE'
+        path = c.get('path', '/')
+        secure = 'TRUE' if c.get('secure', False) else 'FALSE'
+        expires = int(c.get('expirationDate', c.get('expires', 0)) or 0)
+        name = c.get('name', '')
+        value = c.get('value', '')
+        lines.append(f"{domain}\t{include_sub}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
+
+    with open(txt_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+    return txt_path
 
 
 def _gerar_imagem_bytes(prompt: str) -> Tuple[bytes, str]:
@@ -435,30 +464,17 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
         _has_ffmpeg = shutil.which('ffmpeg') is not None
 
         # Definir formato baseado na qualidade escolhida
-        if _has_ffmpeg:
-            # Com ffmpeg: usa streams separados (melhor qualidade) + merge
-            if qualidade == 'audio':
-                format_str = 'bestaudio[ext=m4a]/bestaudio/best'
-            elif qualidade == '360p':
-                format_str = 'bestvideo[height<=360]+bestaudio/best[height<=360]/best'
-            elif qualidade == '480p':
-                format_str = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best'
-            elif qualidade == '720p':
-                format_str = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
-            else:
-                format_str = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best'
+        height_map = {'360p': 360, '480p': 480, '720p': 720}
+        height = height_map.get(qualidade)
+
+        if qualidade == 'audio':
+            format_str = 'bestaudio/best'
+        elif height and _has_ffmpeg:
+            format_str = f'bestvideo[height<={height}]+bestaudio/best'
+        elif height:
+            format_str = f'best[height<={height}]/best'
         else:
-            # Sem ffmpeg: só streams pré-combinados (vídeo+áudio juntos)
-            if qualidade == 'audio':
-                format_str = 'bestaudio/best'
-            elif qualidade == '360p':
-                format_str = 'best[height<=360]/best'
-            elif qualidade == '480p':
-                format_str = 'best[height<=480]/best'
-            elif qualidade == '720p':
-                format_str = 'best[height<=720]/best'
-            else:
-                format_str = 'best[height<=480]/best'
+            format_str = 'best'
 
         ydl_opts = {
             'format': format_str,
@@ -477,12 +493,28 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
             },
             'restrictfilenames': True,
             'noprogress': False,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['web', 'android'],
-                },
-            },
         }
+
+        # Cliente tv bypassa detecção de bot para a maioria dos vídeos
+        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['tv', 'web']}}
+
+        # Cookies do navegador como reforço automático (sempre frescos, sem exportação manual)
+        try:
+            from config import YOUTUBE_COOKIES_FILE, YOUTUBE_COOKIES_BROWSER
+            _bot_dir = os.path.dirname(os.path.abspath(__file__))
+            _cookies_raw = YOUTUBE_COOKIES_FILE or ''
+            if _cookies_raw and not os.path.isabs(_cookies_raw):
+                _cookies_raw = os.path.join(_bot_dir, _cookies_raw)
+            if _cookies_raw and os.path.exists(_cookies_raw):
+                cookies_path = _cookies_raw
+                if cookies_path.lower().endswith('.json'):
+                    cookies_path = _json_cookies_to_netscape(cookies_path)
+                ydl_opts['cookiefile'] = cookies_path
+            else:
+                browser = (YOUTUBE_COOKIES_BROWSER or 'edge').lower()
+                ydl_opts['cookiesfrombrowser'] = (browser,)
+        except Exception as e:
+            logger.warning("Cookies não configurados: %s", e)
 
         if _has_ffmpeg:
             ydl_opts['merge_output_format'] = 'mp4'
@@ -497,9 +529,46 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
 
         # Função que executa o download em thread separada
         def run_download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-            return info
+            # Pré-check: lista os formatos disponíveis para escolher dinamicamente
+            info_opts = {k: v for k, v in ydl_opts.items() if k != 'progress_hooks'}
+            info_opts['quiet'] = True
+            info_opts['format'] = 'bestvideo+bestaudio/best'  # sem filtro para listar tudo
+
+            with yt_dlp.YoutubeDL(info_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+            formats = info.get('formats', [])
+            if not formats:
+                raise Exception("Nenhum formato disponível para este vídeo.")
+
+            logger.info("Formatos disponíveis: %s", [
+                f"{f.get('format_id')} {f.get('height')}p {f.get('ext')}" for f in formats
+            ])
+
+            # Escolher o melhor format_id disponível para a qualidade pedida
+            if qualidade == 'audio':
+                candidates = [f for f in formats if f.get('vcodec') == 'none' or not f.get('vcodec')]
+                if not candidates:
+                    candidates = formats
+                chosen = max(candidates, key=lambda f: f.get('abr') or f.get('tbr') or 0)
+            else:
+                height_map = {'360p': 360, '480p': 480, '720p': 720}
+                max_h = height_map.get(qualidade, 480)
+                candidates = [f for f in formats if (f.get('height') or 0) <= max_h and f.get('acodec') != 'none']
+                if not candidates:
+                    candidates = formats
+                chosen = max(candidates, key=lambda f: (f.get('height') or 0, f.get('tbr') or 0))
+
+            chosen_id = chosen['format_id']
+            logger.info("Formato escolhido: %s (%sp %s)", chosen_id, chosen.get('height'), chosen.get('ext'))
+
+            final_opts = dict(ydl_opts)
+            final_opts['format'] = chosen_id
+            if _has_ffmpeg and qualidade != 'audio':
+                final_opts['merge_output_format'] = 'mp4'
+
+            with yt_dlp.YoutubeDL(final_opts) as ydl:
+                return ydl.extract_info(url, download=True)
 
         # Executar download em background
         loop = asyncio.get_event_loop()
@@ -589,13 +658,127 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
         error_msg = str(e)
         if len(error_msg) > 500:
             error_msg = error_msg[:500] + "..."
+        is_bot_check = "sign in" in error_msg.lower() or "bot" in error_msg.lower()
+        if is_bot_check:
+            dica = (
+                "⚠️ O YouTube está bloqueando o download.\n\n"
+                "Para corrigir, exporte seus cookies do navegador:\n"
+                "1. Instale a extensão 'Get cookies.txt LOCALLY' no Chrome/Edge\n"
+                "2. Abra o YouTube logado e exporte o cookies.txt\n"
+                "3. Salve o arquivo e configure YOUTUBE_COOKIES_FILE no .env"
+            )
+        else:
+            dica = (
+                "💡 Dicas:\n"
+                "• Verifique se a URL é válida\n"
+                "• Tente com qualidade mais baixa\n"
+                "• A extração de áudio requer ffmpeg instalado"
+            )
         await update.callback_query.message.reply_text(
-            f"❌ Erro no download: {error_msg}\n\n"
-            f"💡 Dicas:\n"
-            f"• Verifique se a URL é válida\n"
-            f"• Tente com qualidade mais baixa\n"
-            f"• A extração de áudio requer `ffmpeg` instalado"
+            f"❌ Erro no download: {error_msg}\n\n{dica}"
         )
+
+
+# 🖼️→ /conv_img
+async def converter_imagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Converte uma imagem para outro formato (jpg, png, webp, bmp, gif, tiff, pdf).
+
+    Uso: responda a uma mensagem com imagem com /conv_img <formato>
+    Ex: /conv_img pdf
+    """
+    if not is_authorized(update):
+        return
+
+    FORMATOS = {
+        'jpg': 'JPEG', 'jpeg': 'JPEG', 'png': 'PNG',
+        'webp': 'WEBP', 'bmp': 'BMP', 'gif': 'GIF',
+        'tiff': 'TIFF', 'pdf': 'PDF',
+    }
+
+    msg = update.message
+    file_msg = msg.reply_to_message if msg.reply_to_message else msg
+
+    # Localizar arquivo de imagem
+    file_obj_meta = None
+    if getattr(file_msg, 'photo', None):
+        file_obj_meta = file_msg.photo[-1]
+    elif getattr(file_msg, 'document', None):
+        doc = file_msg.document
+        if doc.mime_type and doc.mime_type.startswith('image/'):
+            file_obj_meta = doc
+
+    if file_obj_meta is None:
+        await msg.reply_text(
+            "❌ Nenhuma imagem encontrada.\n"
+            "Responda a uma mensagem com imagem usando:\n"
+            "/conv\\_img <formato>\n\n"
+            f"Formatos: {', '.join(FORMATOS)}"
+        )
+        return
+
+    if not context.args:
+        await msg.reply_text(
+            f"❌ Informe o formato de destino.\nEx: /conv\\_img pdf\n\nFormatos: {', '.join(FORMATOS)}"
+        )
+        return
+
+    fmt = context.args[0].lower().lstrip('.')
+    if fmt not in FORMATOS:
+        await msg.reply_text(
+            f"❌ Formato inválido: `{fmt}`\nFormatos suportados: {', '.join(FORMATOS)}"
+        )
+        return
+
+    tmpdir = None
+    status_msg = None
+    try:
+        from PIL import Image
+
+        status_msg = await msg.reply_text(f"🔄 Convertendo para {fmt.upper()}…")
+
+        file_obj = await file_obj_meta.get_file()
+        tmpdir = tempfile.mkdtemp(prefix='conv_img_')
+
+        in_path = os.path.join(tmpdir, 'input')
+        await file_obj.download_to_drive(custom_path=in_path)
+
+        img = Image.open(in_path)
+
+        ext = 'jpg' if fmt == 'jpeg' else fmt
+        out_name = f'convertida.{ext}'
+        out_path = os.path.join(tmpdir, out_name)
+
+        pil_fmt = FORMATOS[fmt]
+
+        if pil_fmt in ('JPEG', 'PDF') and img.mode in ('RGBA', 'P', 'LA'):
+            img = img.convert('RGB')
+
+        save_kwargs = {'format': pil_fmt}
+        if pil_fmt == 'JPEG':
+            save_kwargs['quality'] = 95
+
+        img.save(out_path, **save_kwargs)
+
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+        voltar = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]])
+        with open(out_path, 'rb') as f:
+            await msg.reply_document(document=f, filename=out_name, reply_markup=voltar)
+
+    except Exception as e:
+        err = f"❌ Erro ao converter: {str(e)}"
+        if status_msg:
+            try:
+                await status_msg.edit_text(err)
+            except Exception:
+                await msg.reply_text(err)
+        else:
+            await msg.reply_text(err)
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # 🌦️ /clima

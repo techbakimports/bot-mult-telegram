@@ -54,6 +54,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="🎨 Envie o prompt para gerar a imagem.\n"
             "Ex: paisagem cyberpunk à noite"
         )
+    elif query.data == "conv_img":
+        await query.edit_message_text(
+            text="🖼️ Converter imagem\n\n"
+            "Envie uma imagem (foto ou documento) e responda a ela com:\n"
+            "/conv_img <formato>\n\n"
+            "Formatos: jpg, png, webp, bmp, gif, tiff, pdf"
+        )
     elif query.data == "voltar":
         # Voltar ao menu principal
         await show_menu(query)
@@ -70,7 +77,7 @@ async def show_menu(query):
         [InlineKeyboardButton("Ping Site", callback_data="ping_site"), InlineKeyboardButton("Encurtar URL", callback_data="encurta")],
         [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
         [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
-        [InlineKeyboardButton("Imagem", callback_data="imagem")]
+        [InlineKeyboardButton("Imagem", callback_data="imagem"), InlineKeyboardButton("Converter Img", callback_data="conv_img")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     try:

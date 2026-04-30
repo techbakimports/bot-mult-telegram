@@ -35,6 +35,15 @@ wheels/
 .env.local
 BOT_TOKEN
 
+# Cookies (nunca commitar — equivale a senha)
+*.txt.cookies
+*cookies*.txt
+cookies.txt
+cookies.json
+
+# Logs
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
