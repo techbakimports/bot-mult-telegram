@@ -25,6 +25,7 @@ from tools import (
     converter_imagem,
 )
 from button_handler import button_handler, show_menu
+from wallet import handle_wallet_input
 
 
 # 🚀 /start
@@ -40,6 +41,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
         [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
         [InlineKeyboardButton("Imagem", callback_data="imagem"), InlineKeyboardButton("Converter Img", callback_data="conv_img")],
+        [InlineKeyboardButton("💰 Carteira", callback_data="carteira")],
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -62,8 +64,11 @@ async def handle_input_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     
     msg_text = update.message.text.strip()
-    
+
     try:
+        if await handle_wallet_input(update, context):
+            return
+
         if awaiting_cmd == 'baixar':
             # Baixar vídeo/áudio
             context.user_data['download_url'] = msg_text
