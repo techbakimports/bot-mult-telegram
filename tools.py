@@ -529,41 +529,19 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
 
         # Função que executa o download em thread separada
         def run_download():
-            # Pré-check: lista os formatos disponíveis para escolher dinamicamente
-            info_opts = {k: v for k, v in ydl_opts.items() if k != 'progress_hooks'}
-            info_opts['quiet'] = True
-            info_opts['format'] = 'bestvideo+bestaudio/best'  # sem filtro para listar tudo
-
-            with yt_dlp.YoutubeDL(info_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-
-            formats = info.get('formats', [])
-            if not formats:
-                raise Exception("Nenhum formato disponível para este vídeo.")
-
-            logger.info("Formatos disponíveis: %s", [
-                f"{f.get('format_id')} {f.get('height')}p {f.get('ext')}" for f in formats
-            ])
-
-            # Escolher o melhor format_id disponível para a qualidade pedida
             if qualidade == 'audio':
-                candidates = [f for f in formats if f.get('vcodec') == 'none' or not f.get('vcodec')]
-                if not candidates:
-                    candidates = formats
-                chosen = max(candidates, key=lambda f: f.get('abr') or f.get('tbr') or 0)
+                fmt = 'bestaudio[ext=m4a]/bestaudio/best'
             else:
                 height_map = {'360p': 360, '480p': 480, '720p': 720}
-                max_h = height_map.get(qualidade, 480)
-                candidates = [f for f in formats if (f.get('height') or 0) <= max_h and f.get('acodec') != 'none']
-                if not candidates:
-                    candidates = formats
-                chosen = max(candidates, key=lambda f: (f.get('height') or 0, f.get('tbr') or 0))
-
-            chosen_id = chosen['format_id']
-            logger.info("Formato escolhido: %s (%sp %s)", chosen_id, chosen.get('height'), chosen.get('ext'))
+                h = height_map.get(qualidade, 480)
+                fmt = (
+                    f'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]'
+                    f'/bestvideo[height<={h}]+bestaudio'
+                    f'/best[height<={h}]/best'
+                )
 
             final_opts = dict(ydl_opts)
-            final_opts['format'] = chosen_id
+            final_opts['format'] = fmt
             if _has_ffmpeg and qualidade != 'audio':
                 final_opts['merge_output_format'] = 'mp4'
 
@@ -658,8 +636,11 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
         error_msg = str(e)
         if len(error_msg) > 500:
             error_msg = error_msg[:500] + "..."
+        is_members_only = any(kw in error_msg.lower() for kw in ("members", "join this channel", "membership"))
         is_bot_check = "sign in" in error_msg.lower() or "bot" in error_msg.lower()
-        if is_bot_check:
+        if is_members_only:
+            dica = "🔒 Este vídeo é exclusivo para membros do canal e não pode ser baixado."
+        elif is_bot_check:
             dica = (
                 "⚠️ O YouTube está bloqueando o download.\n\n"
                 "Para corrigir, exporte seus cookies do navegador:\n"
