@@ -48,7 +48,7 @@ python main.py
 
 O bot só responde para o usuário com ID configurado em `config.py`:
 ```python
-AUTHORIZED_ID = 109787324  # Altere para seu ID
+AUTHORIZED_ID = 12345678  # Altere para seu ID
 ```
 
 ## 📝 Exemplo de Uso
