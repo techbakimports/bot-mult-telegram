@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -40,6 +41,9 @@ BOT_TOKEN
 *cookies*.txt
 cookies.txt
 cookies.json
+
+# Dados locais do bot (SQLite por usuário)
+gastos/
 
 # Logs
 *.log
