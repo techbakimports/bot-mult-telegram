@@ -25,7 +25,7 @@ from tools import (
     converter_imagem,
 )
 from button_handler import button_handler, show_menu
-from wallet import handle_wallet_input
+from wallet import handle_wallet_input, handle_wallet_photo
 
 
 # 🚀 /start
@@ -108,6 +108,12 @@ async def handle_input_message(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data['awaiting_command'] = None
 
 
+async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Roteia fotos para o handler da wallet quando esperando item via OCR."""
+    if not is_authorized(update):
+        return
+    await handle_wallet_photo(update, context)
+
 
 # 🤖 Main
 def main():
@@ -129,6 +135,7 @@ def main():
 
     # Handler para capturar mensagens quando um comando está aguardando input
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
     
     # Handler dos botões inline
     app.add_handler(CallbackQueryHandler(button_handler))

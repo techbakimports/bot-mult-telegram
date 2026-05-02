@@ -7,3 +7,4 @@ Pillow
 yt-dlp
 pydub
 audioop-lts>=0.2.1; python_version>="3.13"
+easyocr
