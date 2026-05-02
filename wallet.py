@@ -130,6 +130,11 @@ def _deduct_saldo(user_id: int, valor: float) -> float:
         return row[0]
 
 
+def _reset_saldo(user_id: int) -> None:
+    with _get_conn(user_id) as conn:
+        conn.execute("UPDATE saldo SET valor = 0 WHERE id = 1")
+
+
 # ─── Lista de compras ─────────────────────────────────────────────────────────
 
 def _lista_add(user_id: int, nome: str, valor_unit: float, quantidade: int) -> int:
@@ -264,7 +269,17 @@ def _back_kbd() -> InlineKeyboardMarkup:
 def _kbd_saldo() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Adicionar Saldo", callback_data="wallet_saldo_add")],
+        [InlineKeyboardButton("🔄 Resetar Saldo",   callback_data="wallet_saldo_reset")],
         [InlineKeyboardButton("◀️ Voltar",          callback_data="carteira")],
+    ])
+
+
+def _kbd_confirmar_reset() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Sim, zerar",  callback_data="wallet_saldo_reset_sim"),
+            InlineKeyboardButton("❌ Cancelar",    callback_data="wallet_saldo"),
+        ],
     ])
 
 
@@ -497,6 +512,22 @@ async def handle_wallet_callback(query, context: ContextTypes.DEFAULT_TYPE) -> N
         context.user_data["awaiting_command"] = "wallet_saldo_valor"
         await query.edit_message_text(
             "💵 *Digite o valor a adicionar ao saldo:*\n_(ex: 500 ou 1500,00)_",
+            parse_mode="Markdown",
+        )
+
+    elif data == "wallet_saldo_reset":
+        saldo = _get_saldo(user_id)
+        await query.edit_message_text(
+            f"⚠️ *Resetar saldo?*\n\nSaldo atual: *{_fmt(saldo)}*\n\nEssa ação zerará o saldo. Confirma?",
+            reply_markup=_kbd_confirmar_reset(),
+            parse_mode="Markdown",
+        )
+
+    elif data == "wallet_saldo_reset_sim":
+        _reset_saldo(user_id)
+        await query.edit_message_text(
+            "✅ *Saldo zerado com sucesso.*",
+            reply_markup=_kbd_saldo(),
             parse_mode="Markdown",
         )
 
