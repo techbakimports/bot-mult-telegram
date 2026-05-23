@@ -1,13 +1,17 @@
 """
 Handlers para comandos de rede e sistema
 """
+import asyncio
 import time
 import platform
+from datetime import datetime, timezone
+
 import psutil
+import requests
 import subprocess
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
-from utils import is_authorized
+from utils import is_authorized, is_valid_host
 from config import AUTHORIZED_ID
 
 
@@ -57,10 +61,9 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     domain = context.args[0]
 
     try:
-        import requests
-        from datetime import datetime, timezone
         url = f"https://api.whois.vu/?q={domain}"
-        response = requests.get(url, timeout=15)
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(None, lambda: requests.get(url, timeout=15))
 
         if response.status_code == 200:
             data = response.json()
@@ -73,7 +76,7 @@ async def whois_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if not ts: return "N/A"
                     try:
                         return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-                    except:
+                    except (ValueError, TypeError, OSError):
                         return "N/A"
                 
                 created = format_ts(data.get("created"))
@@ -115,9 +118,12 @@ async def ping_site(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     site = context.args[0]
 
+    if not is_valid_host(site):
+        await update.message.reply_text("❌ Endereço inválido. Use um domínio ou IP válido.\nEx: /ping_site google.com")
+        return
+
     try:
-        import os
-        param = '-n' if os.name == 'nt' else '-c'
+        param = '-n' if platform.system() == 'Windows' else '-c'
         result = subprocess.run(
             ["ping", param, "4", site],
             capture_output=True,

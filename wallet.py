@@ -34,6 +34,7 @@ _easyocr_reader = None
 def _get_conn(user_id: int) -> sqlite3.Connection:
     GASTOS_DIR.mkdir(exist_ok=True)
     conn = sqlite3.connect(GASTOS_DIR / f"{user_id}.db")
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS gastos (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -652,10 +653,29 @@ async def handle_wallet_callback(query, context: ContextTypes.DEFAULT_TYPE) -> N
             await query.answer("Lista vazia.")
             return
         total = _lista_total(items)
-        saldo = _get_saldo(user_id)
-        text = _render_lista(items, "🛒 *Lista Finalizada — 🍔 Alimentação*")
-        text += f"\n\n💳 Saldo atual: *{_fmt(saldo)}*\n\n💰 *Deseja abater do saldo?*"
         context.user_data["wallet_lista_total"] = total
+        # Escolher categoria antes de abater
+        cat_label = CATEGORIAS.get(context.user_data.get("wallet_lista_cat", "alimentacao"), "🍔 Alimentação")
+        text = _render_lista(items, f"🛒 *Lista Finalizada — {cat_label}*")
+        text += "\n\n📂 *Categoria da lista:*"
+        kbd_rows = [
+            [InlineKeyboardButton(label, callback_data=f"wallet_lista_cat_{key}")]
+            for key, label in CATEGORIAS.items()
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kbd_rows), parse_mode="Markdown")
+
+    elif data.startswith("wallet_lista_cat_"):
+        cat_key = data[len("wallet_lista_cat_"):]
+        if cat_key not in CATEGORIAS:
+            await query.answer("Categoria inválida.")
+            return
+        context.user_data["wallet_lista_cat"] = cat_key
+        items = _lista_get(user_id)
+        total = context.user_data.get("wallet_lista_total", _lista_total(items))
+        saldo = _get_saldo(user_id)
+        cat_label = CATEGORIAS[cat_key]
+        text = _render_lista(items, f"🛒 *Lista Finalizada — {cat_label}*")
+        text += f"\n\n💳 Saldo atual: *{_fmt(saldo)}*\n\n💰 *Deseja abater do saldo?*"
         await query.edit_message_text(text, reply_markup=_kbd_abater(), parse_mode="Markdown")
 
     elif data == "wallet_lista_abater_sim":
@@ -679,12 +699,14 @@ async def handle_wallet_callback(query, context: ContextTypes.DEFAULT_TYPE) -> N
     elif data == "wallet_lista_salvar":
         items = _lista_get(user_id)
         total = context.user_data.get("wallet_lista_total", _lista_total(items))
+        cat_key = context.user_data.pop("wallet_lista_cat", "alimentacao")
+        cat_label = CATEGORIAS.get(cat_key, "📦 Outros")
         if items:
             nomes = ", ".join(row[1] for row in items)
-            _lancar(user_id, "alimentacao", total, f"Lista: {nomes}"[:200])
+            _lancar(user_id, cat_key, total, f"Lista: {nomes}"[:200])
         _lista_clear(user_id)
         await query.edit_message_text(
-            f"✅ *Lista salva no histórico!*\n💰 *{_fmt(total)}* em 🍔 Alimentação",
+            f"✅ *Lista salva no histórico!*\n💰 *{_fmt(total)}* em {cat_label}",
             reply_markup=_back_kbd(),
             parse_mode="Markdown",
         )

@@ -27,9 +27,16 @@ logger = logging.getLogger(__name__)
 def _json_cookies_to_netscape(json_path: str) -> str:
     """Converte cookies exportados em JSON para o formato Netscape que o yt-dlp aceita.
     Retorna o caminho do arquivo .txt gerado no mesmo diretório.
+
+    Raises:
+        ValueError: se o JSON não for uma lista de cookies válida.
+        FileNotFoundError / json.JSONDecodeError: se o arquivo não existir ou for inválido.
     """
     with open(json_path, 'r', encoding='utf-8') as f:
         cookies = json.load(f)
+
+    if not isinstance(cookies, list):
+        raise ValueError(f"Arquivo de cookies inválido: esperava uma lista, recebeu {type(cookies).__name__}")
 
     txt_path = json_path.rsplit('.', 1)[0] + '_converted.txt'
     lines = ['# Netscape HTTP Cookie File', '# Gerado automaticamente pelo bot\n']
@@ -110,7 +117,7 @@ async def gerar_imagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         status_msg = await update.message.reply_text("🎨 Gerando imagem… pode levar até 1–2 minutos.")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         image_bytes, fonte = await loop.run_in_executor(None, lambda: _gerar_imagem_bytes(prompt))
 
         bio = io.BytesIO(image_bytes)
@@ -158,6 +165,7 @@ async def process_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return
 
+    tmpdir = None
     try:
         from pydub import AudioSegment
 
@@ -293,10 +301,13 @@ async def encurtar_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         url = context.args[0]
         encoded_url = quote(url, safe='')
-        
+
         api_url = f"https://is.gd/create.php?format=simple&url={encoded_url}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        response = requests.get(api_url, headers=headers, timeout=5)
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, lambda: requests.get(api_url, headers=headers, timeout=5)
+        )
         url_curta = response.text.strip()
         
         if url_curta.lower().startswith('http'):
@@ -463,21 +474,8 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
         # Detectar se ffmpeg está disponível (necessário para merge de streams)
         _has_ffmpeg = shutil.which('ffmpeg') is not None
 
-        # Definir formato baseado na qualidade escolhida
-        height_map = {'360p': 360, '480p': 480, '720p': 720}
-        height = height_map.get(qualidade)
-
-        if qualidade == 'audio':
-            format_str = 'bestaudio/best'
-        elif height and _has_ffmpeg:
-            format_str = f'bestvideo[height<={height}]+bestaudio/best'
-        elif height:
-            format_str = f'best[height<={height}]/best'
-        else:
-            format_str = 'best'
-
         ydl_opts = {
-            'format': format_str,
+            'format': 'best',  # sobrescrito em run_download()
             'outtmpl': os.path.join(tmpdir, '%(title).80s.%(ext)s'),
             'quiet': True,
             'no_warnings': True,
@@ -549,7 +547,7 @@ async def fazer_download(update: Update, context: ContextTypes.DEFAULT_TYPE, qua
                 return ydl.extract_info(url, download=True)
 
         # Executar download em background
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         download_task = loop.run_in_executor(None, run_download)
         
         # Atualizar progresso a cada 3 segundos
@@ -790,8 +788,11 @@ async def clima(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not api_key:
             # Fallback: usar API open-meteo (sem chave)
+            loop = asyncio.get_running_loop()
             url = f"https://geocoding-api.open-meteo.com/v1/search?name={cidade}&count=1&language=pt&format=json"
-            geo_resp = requests.get(url, timeout=5)
+            geo_resp = await loop.run_in_executor(
+                None, lambda: requests.get(url, timeout=5)
+            )
             geo_data = geo_resp.json()
 
             if not geo_data.get('results'):
@@ -804,7 +805,9 @@ async def clima(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Buscar clima
             weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto"
-            weather_resp = requests.get(weather_url, timeout=5)
+            weather_resp = await loop.run_in_executor(
+                None, lambda: requests.get(weather_url, timeout=5)
+            )
             weather_data = weather_resp.json()
 
             current = weather_data['current']
@@ -854,8 +857,11 @@ async def clima(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Com chave OpenWeatherMap
+        loop = asyncio.get_running_loop()
         url = f"https://api.openweathermap.org/data/2.5/weather?q={cidade}&appid={api_key}&units=metric&lang=pt_br"
-        response = requests.get(url, timeout=5)
+        response = await loop.run_in_executor(
+            None, lambda: requests.get(url, timeout=5)
+        )
         data = response.json()
 
         if data.get('cod') != 200:

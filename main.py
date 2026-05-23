@@ -28,6 +28,23 @@ from button_handler import button_handler, show_menu
 from wallet import handle_wallet_input, handle_wallet_photo
 
 
+# ❌ /cancelar
+async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancela qualquer operação pendente"""
+    if not is_authorized(update):
+        return
+    awaiting = context.user_data.get('awaiting_command')
+    if awaiting:
+        context.user_data['awaiting_command'] = None
+        # Limpar dados temporários da wallet
+        for key in list(context.user_data.keys()):
+            if key.startswith('wallet_') and key != 'awaiting_command':
+                del context.user_data[key]
+        await update.message.reply_text("✅ Operação cancelada.")
+    else:
+        await update.message.reply_text("ℹ️ Nenhuma operação pendente.")
+
+
 # 🚀 /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando inicial do bot"""
@@ -122,6 +139,7 @@ def main():
     
     # Handlers dos comandos
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("cancelar", cancelar))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("whois", whois_lookup))
     app.add_handler(CommandHandler("ping_site", ping_site))
