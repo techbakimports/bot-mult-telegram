@@ -197,16 +197,30 @@ async def _ocr_from_photo(photo_file) -> str:
 def _parse_item_text(text: str) -> tuple:
     """Extrai (nome, valor) de 'feijão 13' ou 'arroz R$ 8,50'."""
     text = text.strip()
-    match = re.search(r'R?\$?\s*(\d+(?:[.,]\d{1,2})?)', text)
+
+    # Prioridade 1: R$ explícito
+    match = re.search(r'R\$\s*(\d+(?:[.,]\d{1,2})?)', text)
+
+    # Prioridade 2: número com exatamente 2 casas decimais
+    if not match:
+        match = re.search(r'(?<!\d)(\d+[.,]\d{2})(?!\d)', text)
+
+    # Prioridade 3: último número do texto
+    if not match:
+        all_matches = list(re.finditer(r'(?<!\d)(\d+(?:[.,]\d{1,2})?)(?!\d)', text))
+        match = all_matches[-1] if all_matches else None
+
     if not match:
         return None, None
+
     try:
         valor = float(match.group(1).replace(',', '.'))
         if valor <= 0:
             raise ValueError
     except ValueError:
         return None, None
-    nome = re.sub(r'R?\$?\s*\d+(?:[.,]\d{1,2})?', '', text).strip()
+
+    nome = text[:match.start()].strip()
     nome = re.sub(r'\s+', ' ', nome).strip()
     return (nome or None), valor
 
