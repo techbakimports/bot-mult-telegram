@@ -11,6 +11,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 from config import TOKEN
 from utils import is_authorized
 from handlers import status, whois_lookup, ping_site
@@ -135,8 +136,24 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 # 🤖 Main
 def main():
     """Função principal que inicia o bot"""
-    app = ApplicationBuilder().token(TOKEN).build()
-    
+    request = HTTPXRequest(
+        read_timeout=30,
+        connect_timeout=15,
+        pool_timeout=10,
+    )
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .request(request)
+        .read_timeout(30)
+        .connect_timeout(15)
+        .pool_timeout(10)
+        .get_updates_read_timeout(60)
+        .get_updates_connect_timeout(15)
+        .get_updates_pool_timeout(10)
+        .build()
+    )
+
     # Handlers dos comandos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancelar", cancelar))
@@ -159,7 +176,10 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("✅ Bot iniciado...")
-    app.run_polling()
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+    )
 
 
 if __name__ == "__main__":

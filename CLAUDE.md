@@ -9,8 +9,8 @@ Bot Telegram Python multifuncional: ferramentas de rede, download de mídia, ger
 - Áudio: pydub, audioop-lts
 - Imagem: Pillow, qrcode
 - OCR: easyocr
-- Banco: SQLite (gastos por usuário)
-- APIs externas: Pollinations AI / OpenAI DALL-E 3, Open-Meteo / OpenWeatherMap, is.gd
+- Banco: SQLite com WAL mode (gastos por usuário)
+- APIs externas: Pollinations AI, Open-Meteo / OpenWeatherMap, is.gd
 
 ## Dependências
 ```bash
@@ -18,6 +18,7 @@ Bot Telegram Python multifuncional: ferramentas de rede, download de mídia, ger
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 # Requer ffmpeg instalado no sistema (para yt-dlp e pydub)
+# Versões fixadas no requirements.txt — não usar pacotes sem versão
 ```
 
 ## Comando de execução
@@ -40,20 +41,25 @@ OPENWEATHER_API_KEY=      # opcional (clima premium)
 ```
 
 ## Estrutura de arquivos
-- `main.py` — inicializa bot, registra handlers, inicia polling
+- `main.py` — inicializa bot, registra handlers (/start, /cancelar, etc.), inicia polling
 - `config.py` — variáveis de ambiente e configurações
-- `handlers.py` — status VPS, whois, ping
-- `tools.py` — encurtar URL, QR code, download, áudio, clima, imagens
+- `utils.py` — is_authorized() e is_valid_host() (validação de segurança)
+- `handlers.py` — status VPS, whois (async), ping (com validação de host)
+- `tools.py` — encurtar URL, QR code, download, áudio, clima, imagens (requests via run_in_executor)
 - `button_handler.py` — menu inline e callbacks
-- `wallet.py` — carteira de gastos com SQLite e OCR
+- `wallet.py` — carteira de gastos com SQLite (WAL mode) e OCR
 - `gastos/` — banco SQLite por usuário (`<user_id>.db`)
 - `cookies.json` — cookies YouTube (não commitar)
 
 ## Comandos disponíveis no bot
-`/start` `/status` `/whois` `/ping_site` `/encurta` `/qrcode` `/baixar` `/audio` `/clima` `/imagem` `/conv_img` + sistema de carteira
+`/start` `/cancelar` `/status` `/whois` `/ping_site` `/encurta` `/qrcode` `/baixar` `/audio` `/clima` `/imagem` `/conv_img` + sistema de carteira
 
 ## Regras
 - Limite de upload Telegram: 50MB — não remover a validação de tamanho
 - ffmpeg precisa estar no PATH do sistema
-- Múltiplos usuários suportados; dados isolados por `user_id` no SQLite
+- Múltiplos usuários suportados; dados isolados por `user_id` no SQLite (WAL mode)
 - Nunca commitar `cookies.json` nem `.env`
+- Chamadas HTTP (`requests.get`) devem usar `run_in_executor` para não bloquear o event loop
+- Usar `asyncio.get_running_loop()` (não `get_event_loop()` que é depreciado)
+- Sempre inicializar `tmpdir = None` antes de blocos try que criam diretórios temporários
+- Validar inputs de rede (domínios/IPs) com `is_valid_host()` antes de passar a subprocess
