@@ -141,16 +141,16 @@ def main():
         connect_timeout=15,
         pool_timeout=10,
     )
+    get_updates_request = HTTPXRequest(
+        read_timeout=60,
+        connect_timeout=15,
+        pool_timeout=10,
+    )
     app = (
         ApplicationBuilder()
         .token(TOKEN)
         .request(request)
-        .read_timeout(30)
-        .connect_timeout(15)
-        .pool_timeout(10)
-        .get_updates_read_timeout(60)
-        .get_updates_connect_timeout(15)
-        .get_updates_pool_timeout(10)
+        .get_updates_request(get_updates_request)
         .build()
     )
 
