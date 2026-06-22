@@ -23,16 +23,10 @@ def _kbd_sorteio() -> InlineKeyboardMarkup:
     ])
 
 
-def _kbd_novamente(tipo: str) -> InlineKeyboardMarkup:
+def _kbd_repetir_ou_parar() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 De novo", callback_data=tipo)],
-        [InlineKeyboardButton("◀️ Menu sorteio", callback_data="sorteio")],
-    ])
-
-
-def _kbd_voltar_sorteio() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Menu sorteio", callback_data="sorteio")],
+        [InlineKeyboardButton("🔄 Sortear de novo", callback_data="sort_repetir")],
+        [InlineKeyboardButton("✅ Finalizar sorteio", callback_data="sorteio")],
     ])
 
 
@@ -50,12 +44,15 @@ async def sortear(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(opcoes) < 2:
                 await update.message.reply_text("❌ Envie pelo menos 2 opções separadas por vírgula.")
                 return
+            context.user_data["sort_tipo"] = "palavras"
+            context.user_data["sort_opcoes"] = opcoes
             escolhido = random.choice(opcoes)
             await update.message.reply_text(
-                f"🎲 *Sorteio entre {len(opcoes)} opções:*\n\n"
+                f"🎲 *Sorteio entre {len(opcoes)} opções:*\n"
+                f"{', '.join(opcoes)}\n\n"
                 f"🏆 *{escolhido}*",
                 parse_mode="Markdown",
-                reply_markup=_kbd_novamente("sort_palavras"),
+                reply_markup=_kbd_repetir_ou_parar(),
             )
             return
 
@@ -72,6 +69,10 @@ async def handle_sorteio_callback(query, context: ContextTypes.DEFAULT_TYPE) -> 
     data = query.data
 
     if data == "sorteio":
+        context.user_data.pop("sort_tipo", None)
+        context.user_data.pop("sort_opcoes", None)
+        context.user_data.pop("sort_min", None)
+        context.user_data.pop("sort_max", None)
         await query.edit_message_text(
             "🎲 *Sorteio*\n\nEscolha o tipo:",
             parse_mode="Markdown",
@@ -92,25 +93,87 @@ async def handle_sorteio_callback(query, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(
             "🔢 *Sortear número*\n\n"
             "Digite o intervalo (mínimo e máximo):\n"
-            "_(ex: 1 200  ou  50 500)_",
+            "_(ex: 1 200  ou  1-200)_",
             parse_mode="Markdown",
         )
 
+    elif data == "sort_repetir":
+        tipo = context.user_data.get("sort_tipo")
+
+        if tipo == "palavras":
+            opcoes = context.user_data.get("sort_opcoes", [])
+            if not opcoes:
+                await query.edit_message_text(
+                    "❌ Dados perdidos. Comece novamente.",
+                    reply_markup=_kbd_sorteio(),
+                )
+                return
+            escolhido = random.choice(opcoes)
+            await query.edit_message_text(
+                f"🎲 *Sorteio entre {len(opcoes)} opções:*\n"
+                f"{', '.join(opcoes)}\n\n"
+                f"🏆 *{escolhido}*",
+                parse_mode="Markdown",
+                reply_markup=_kbd_repetir_ou_parar(),
+            )
+
+        elif tipo == "numero":
+            minimo = context.user_data.get("sort_min", 0)
+            maximo = context.user_data.get("sort_max", 0)
+            if minimo >= maximo:
+                await query.edit_message_text(
+                    "❌ Dados perdidos. Comece novamente.",
+                    reply_markup=_kbd_sorteio(),
+                )
+                return
+            resultado = random.randint(minimo, maximo)
+            await query.edit_message_text(
+                f"🔢 *Sorteio de {minimo} a {maximo}:*\n\n"
+                f"🏆 *{resultado}*",
+                parse_mode="Markdown",
+                reply_markup=_kbd_repetir_ou_parar(),
+            )
+
+        elif tipo == "moeda":
+            resultado = random.choice(["🪙 Cara!", "🪙 Coroa!"])
+            await query.edit_message_text(
+                f"🪙 *Cara ou coroa*\n\n🏆 *{resultado}*",
+                parse_mode="Markdown",
+                reply_markup=_kbd_repetir_ou_parar(),
+            )
+
+        elif tipo == "dado":
+            valor = random.randint(1, 6)
+            faces = {1: "⚀", 2: "⚁", 3: "⚂", 4: "⚃", 5: "⚄", 6: "⚅"}
+            await query.edit_message_text(
+                f"🎯 *Rolar dados*\n\n{faces[valor]} *{valor}*",
+                parse_mode="Markdown",
+                reply_markup=_kbd_repetir_ou_parar(),
+            )
+
+        else:
+            await query.edit_message_text(
+                "❌ Nenhum sorteio ativo. Comece novamente.",
+                reply_markup=_kbd_sorteio(),
+            )
+
     elif data == "sort_moeda":
+        context.user_data["sort_tipo"] = "moeda"
         resultado = random.choice(["🪙 Cara!", "🪙 Coroa!"])
         await query.edit_message_text(
             f"🪙 *Cara ou coroa*\n\n🏆 *{resultado}*",
             parse_mode="Markdown",
-            reply_markup=_kbd_novamente("sort_moeda"),
+            reply_markup=_kbd_repetir_ou_parar(),
         )
 
     elif data == "sort_dado":
+        context.user_data["sort_tipo"] = "dado"
         valor = random.randint(1, 6)
         faces = {1: "⚀", 2: "⚁", 3: "⚂", 4: "⚃", 5: "⚄", 6: "⚅"}
         await query.edit_message_text(
             f"🎯 *Rolar dados*\n\n{faces[valor]} *{valor}*",
             parse_mode="Markdown",
-            reply_markup=_kbd_novamente("sort_dado"),
+            reply_markup=_kbd_repetir_ou_parar(),
         )
 
 
@@ -132,6 +195,8 @@ async def handle_sorteio_input(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return True
 
+        context.user_data["sort_tipo"] = "palavras"
+        context.user_data["sort_opcoes"] = opcoes
         escolhido = random.choice(opcoes)
         context.user_data["awaiting_command"] = None
         await update.message.reply_text(
@@ -139,13 +204,12 @@ async def handle_sorteio_input(update: Update, context: ContextTypes.DEFAULT_TYP
             f"{', '.join(opcoes)}\n\n"
             f"🏆 *{escolhido}*",
             parse_mode="Markdown",
-            reply_markup=_kbd_novamente("sort_palavras"),
+            reply_markup=_kbd_repetir_ou_parar(),
         )
         return True
 
     elif awaiting == "sort_numero":
         texto = update.message.text.strip()
-        # Aceita "1 200", "1-200", "1,200"
         partes = texto.replace("-", " ").replace(",", " ").split()
 
         if len(partes) != 2:
@@ -179,13 +243,16 @@ async def handle_sorteio_input(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text("❌ Intervalo muito grande (máx 1.000.000).")
             return True
 
+        context.user_data["sort_tipo"] = "numero"
+        context.user_data["sort_min"] = minimo
+        context.user_data["sort_max"] = maximo
         resultado = random.randint(minimo, maximo)
         context.user_data["awaiting_command"] = None
         await update.message.reply_text(
             f"🔢 *Sorteio de {minimo} a {maximo}:*\n\n"
             f"🏆 *{resultado}*",
             parse_mode="Markdown",
-            reply_markup=_kbd_novamente("sort_numero"),
+            reply_markup=_kbd_repetir_ou_parar(),
         )
         return True
 
