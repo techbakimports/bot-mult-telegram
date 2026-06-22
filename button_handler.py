@@ -7,6 +7,7 @@ from utils import is_authorized
 from handlers import status
 from tools import fazer_download
 from wallet import handle_wallet_callback, show_wallet_menu
+from sorteio import handle_sorteio_callback
 
 
 # 🔘 Handler dos botões inline
@@ -62,6 +63,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/conv_img <formato>\n\n"
             "Formatos: jpg, png, webp, bmp, gif, tiff, pdf"
         )
+    elif query.data == "sorteio" or query.data.startswith("sort_"):
+        await handle_sorteio_callback(query, context)
     elif query.data == "carteira" or query.data.startswith("wallet_"):
         await handle_wallet_callback(query, context)
     elif query.data == "voltar":
@@ -81,7 +84,7 @@ async def show_menu(query):
         [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
         [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
         [InlineKeyboardButton("Imagem", callback_data="imagem"), InlineKeyboardButton("Converter Img", callback_data="conv_img")],
-        [InlineKeyboardButton("💰 Carteira", callback_data="carteira")],
+        [InlineKeyboardButton("🎲 Sorteio", callback_data="sorteio"), InlineKeyboardButton("💰 Carteira", callback_data="carteira")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     try:

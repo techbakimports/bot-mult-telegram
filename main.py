@@ -26,6 +26,7 @@ from tools import (
 )
 from button_handler import button_handler, show_menu
 from wallet import handle_wallet_input, handle_wallet_photo
+from sorteio import sortear, handle_sorteio_input
 
 
 # ❌ /cancelar
@@ -58,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("QR Code", callback_data="qrcode"), InlineKeyboardButton("Baixar", callback_data="baixar")],
         [InlineKeyboardButton("Áudio", callback_data="audio"), InlineKeyboardButton("Clima", callback_data="clima")],
         [InlineKeyboardButton("Imagem", callback_data="imagem"), InlineKeyboardButton("Converter Img", callback_data="conv_img")],
-        [InlineKeyboardButton("💰 Carteira", callback_data="carteira")],
+        [InlineKeyboardButton("🎲 Sorteio", callback_data="sorteio"), InlineKeyboardButton("💰 Carteira", callback_data="carteira")],
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -84,6 +85,9 @@ async def handle_input_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         if await handle_wallet_input(update, context):
+            return
+
+        if await handle_sorteio_input(update, context):
             return
 
         if awaiting_cmd == 'baixar':
@@ -150,6 +154,7 @@ def main():
     app.add_handler(CommandHandler("clima", clima))
     app.add_handler(CommandHandler("imagem", gerar_imagem))
     app.add_handler(CommandHandler("conv_img", converter_imagem))
+    app.add_handler(CommandHandler("sortear", sortear))
 
     # Handler para capturar mensagens quando um comando está aguardando input
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input_message))
