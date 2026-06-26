@@ -37,9 +37,8 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     awaiting = context.user_data.get('awaiting_command')
     if awaiting:
         context.user_data['awaiting_command'] = None
-        # Limpar dados temporários da wallet
         for key in list(context.user_data.keys()):
-            if key.startswith('wallet_') and key != 'awaiting_command':
+            if key.startswith(('wallet_', 'sort_')) and key != 'awaiting_command':
                 del context.user_data[key]
         await update.message.reply_text("✅ Operação cancelada.")
     else:
