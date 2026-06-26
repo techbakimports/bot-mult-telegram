@@ -276,7 +276,8 @@ async def process_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if size_mb > 45:
                 await msg.reply_text(f"⚠️ Arquivo grande ({size_mb:.1f} MB). O Telegram pode recusar uploads grandes.")
             with open(out_path, 'rb') as f:
-                await msg.reply_document(document=f, filename=os.path.basename(out_path))
+                await msg.reply_document(document=f, filename=os.path.basename(out_path),
+                                         read_timeout=120, write_timeout=120)
 
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -744,7 +745,8 @@ async def converter_imagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         voltar = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Voltar", callback_data="voltar")]])
         with open(out_path, 'rb') as f:
-            await msg.reply_document(document=f, filename=out_name, reply_markup=voltar)
+            await msg.reply_document(document=f, filename=out_name, reply_markup=voltar,
+                                     read_timeout=120, write_timeout=120)
 
     except Exception as e:
         err = f"❌ Erro ao converter: {str(e)}"
