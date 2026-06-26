@@ -2,9 +2,11 @@
 Módulo de sorteio — palavras, números, cara/coroa, dados
 """
 import random
+import re
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
+from telegram.helpers import escape_markdown
 
 from utils import is_authorized
 
@@ -47,10 +49,12 @@ async def sortear(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["sort_tipo"] = "palavras"
             context.user_data["sort_opcoes"] = opcoes
             escolhido = random.choice(opcoes)
+            lista_esc = escape_markdown(', '.join(opcoes), version=1)
+            escolhido_esc = escape_markdown(escolhido, version=1)
             await update.message.reply_text(
                 f"🎲 *Sorteio entre {len(opcoes)} opções:*\n"
-                f"{', '.join(opcoes)}\n\n"
-                f"🏆 *{escolhido}*",
+                f"{lista_esc}\n\n"
+                f"🏆 *{escolhido_esc}*",
                 parse_mode="Markdown",
                 reply_markup=_kbd_repetir_ou_parar(),
             )
@@ -109,10 +113,12 @@ async def handle_sorteio_callback(query, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 return
             escolhido = random.choice(opcoes)
+            lista_esc = escape_markdown(', '.join(opcoes), version=1)
+            escolhido_esc = escape_markdown(escolhido, version=1)
             await query.edit_message_text(
                 f"🎲 *Sorteio entre {len(opcoes)} opções:*\n"
-                f"{', '.join(opcoes)}\n\n"
-                f"🏆 *{escolhido}*",
+                f"{lista_esc}\n\n"
+                f"🏆 *{escolhido_esc}*",
                 parse_mode="Markdown",
                 reply_markup=_kbd_repetir_ou_parar(),
             )
@@ -199,10 +205,12 @@ async def handle_sorteio_input(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data["sort_opcoes"] = opcoes
         escolhido = random.choice(opcoes)
         context.user_data["awaiting_command"] = None
+        lista_esc = escape_markdown(', '.join(opcoes), version=1)
+        escolhido_esc = escape_markdown(escolhido, version=1)
         await update.message.reply_text(
             f"🎲 *Sorteio entre {len(opcoes)} opções:*\n"
-            f"{', '.join(opcoes)}\n\n"
-            f"🏆 *{escolhido}*",
+            f"{lista_esc}\n\n"
+            f"🏆 *{escolhido_esc}*",
             parse_mode="Markdown",
             reply_markup=_kbd_repetir_ou_parar(),
         )
@@ -210,9 +218,13 @@ async def handle_sorteio_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
     elif awaiting == "sort_numero":
         texto = update.message.text.strip()
-        partes = texto.replace("-", " ").replace(",", " ").split()
+        match = re.match(r'^\s*(-?\d+)\s+(-?\d+)\s*$', texto)
+        if not match:
+            match = re.match(r'^\s*(-?\d+)\s*-\s*(-?\d+)\s*$', texto)
+        if not match:
+            match = re.match(r'^\s*(-?\d+)\s*,\s*(-?\d+)\s*$', texto)
 
-        if len(partes) != 2:
+        if not match:
             await update.message.reply_text(
                 "❌ Formato inválido. Digite dois números.\n"
                 "_(ex: 1 200  ou  1-200)_",
@@ -221,8 +233,8 @@ async def handle_sorteio_input(update: Update, context: ContextTypes.DEFAULT_TYP
             return True
 
         try:
-            minimo = int(partes[0])
-            maximo = int(partes[1])
+            minimo = int(match.group(1))
+            maximo = int(match.group(2))
         except ValueError:
             await update.message.reply_text(
                 "❌ Use apenas números inteiros.\n"
